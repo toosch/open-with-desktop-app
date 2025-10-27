@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <title>Openen in desktop-app</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .message {
+      padding: 1em;
+      background: #e7f3ff;
+      color: #084298;
+      border: 1px solid #b6daff;
+      border-radius: 5px;
+      text-align: center;
+      max-width: 640px;
+      line-height: 1.4;
+    }
+    .actions {
+      margin-top: 0.75em;
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 8px 12px;
+      border-radius: 4px;
+      text-decoration: none;
+      display: inline-block;
+      border: 1px solid #c8c8c8;
+      background: #fff;
+      color: #333;
+    }
+    .btn-primary {
+      background: #0078d4;
+      color: #fff;
+      border-color: #0078d4;
+    }
+    small {
+      display: block;
+      margin-top: 0.5em;
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div class="message" id="message">
+    Bezig met openen in de <strong>desktop-app</strong>…
+    <br>
+    <strong>Krijg je een melding?</strong> Kies dan <em>Toestaan / Openen</em>.
+    <div class="actions" id="actions" style="display:none">
+      <a id="retryDesktop" class="btn btn-primary" href="#">Opnieuw proberen in desktop</a>
+      <a id="openWeb" class="btn" href="#" target="_self">Open in web</a>
+      <a id="directLink" class="btn" href="#" target="_blank">Bestand openen (directe link)</a>
+    </div>
+    <small id="details"></small>
+  </div>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const u = params.get('u');        // EncodedAbsUrl (volledige https-bestandslink)
+      let app = (params.get('app') || '').toLowerCase(); // word|excel|powerpoint
+      const id = params.get('id');      // GUID voor WOPI fallback (optioneel)
+      const webOverride = params.get('web'); // expliciete web fallback (optioneel)
+
+      const msg = (t) => document.getElementById('message').firstChild.nodeType === 3
+        ? document.getElementById('message').firstChild.nodeValue = t
+        : document.getElementById('message').insertBefore(document.createTextNode(t), document.getElementById('message').firstChild);
+
+      const detailsEl = document.getElementById('details');
+      const actionsEl = document.getElementById('actions');
+      const retryBtn  = document.getElementById('retryDesktop');
+      const webBtn    = document.getElementById('openWeb');
+      const directBtn = document.getElementById('directLink');
+
+      if (!u) {
+        document.getElementById('message').innerHTML = "Geen bestands-URL gevonden (<code>?u=...</code>).";
+        return;
+      }
+
+      // App afleiden op basis van extensie als 'app' niet opgegeven is
+      if (!app) {
+        try {
+          const urlObj = new URL(u);
+          const path = urlObj.pathname.toLowerCase();
+          if (/\.(docx?|rtf)$/.test(path)) app = 'word';
+          else if (/\.(xlsx?|csv)$/.test(path)) app = 'excel';
+          else if (/\.(pptx?)$/.test(path)) app = 'powerpoint';
+        } catch (_) { /* laat app leeg indien URL parsing faalt */ }
+      }
+
+      const scheme = app === 'word' ? 'ms-word:ofe|u|' :
+                     app === 'excel' ? 'ms-excel:ofe|u|' :
+                     app === 'powerpoint' ? 'ms-powerpoint:ofe|u|' : null;
+
+      // Fallback naar WOPI (web) op basis van dezelfde tenant als het bestand
+      let webFallback = webOverride;
+      if (!webFallback) {
+        try {
+          const fileUrl = new URL(u);
+          if (id) {
+            webFallback = `${fileUrl.origin}/_layouts/15/Doc.aspx?sourcedoc=${encodeURIComponent(id)}&action=default&DefaultItemOpen=1`;
+          } else {
+            // Zonder GUID: val terug op de directe https-bestandslink
+            webFallback = u;
+          }
+        } catch (_) {
+          webFallback = u;
+        }
+      }
+
+      // Vul de actieknoppen
+      directBtn.href = u;
+      webBtn.href = webFallback;
+
+      const desktopHref = scheme ? (scheme + u) : null;
+      if (desktopHref) retryBtn.href = desktopHref;
+
+      // Toon details (handig voor debug)
+      detailsEl.textContent = desktopHref
+        ? `App: ${app} • Desktop: ${desktopHref} • Web fallback: ${webFallback}`
+        : `Geen ondersteunde app gedetecteerd. Openen in web: ${webFallback}`;
+
+      // Acties tonen
+      actionsEl.style.display = 'flex';
+
+      // Proberen om desktop-app te starten
+      if (desktopHref) {
+        // 1) start desktop
+        window.location.href = desktopHref;
+        // 2) zachte fallback naar web als desktop niet reageert
+        setTimeout(function () {
+          window.location.href = webFallback;
+        }, 1200);
+      } else {
+        // Geen scheme -> direct naar web
+        window.location.href = webFallback;
+      }
+    })();
+  </script>
+</body>
+</html>
