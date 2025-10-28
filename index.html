@@ -2,118 +2,90 @@
 <html lang="nl">
 <head>
   <meta charset="UTF-8" />
-  <title>Openen in desktop-app</title>
+  <title>Bestand Openen</title>
   <style>
-    body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}
-    .box{max-width:720px;padding:16px;border:1px solid #cfe3ff;border-radius:8px;background:#f5faff;color:#123}
-    .actions{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
-    .btn{padding:8px 12px;border-radius:4px;text-decoration:none;border:1px solid #c8c8c8;background:#fff;color:#333;display:inline-block}
+    body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f0f0f0}
+    .box{max-width:720px;padding:24px;border:1px solid #ccc;border-radius:8px;background:#fff;color:#123;box-shadow: 0 4px 12px rgba(0,0,0,0.05);}
+    h3 { margin-top: 0; }
+    .actions{margin-top:16px;display:flex;gap:12px;flex-wrap:wrap}
+    .btn{padding:10px 16px;border-radius:5px;text-decoration:none;border:1px solid #c8c8c8;background:#fff;color:#333;display:inline-block; font-weight: 600; cursor: pointer;}
     .btn-primary{background:#0078d4;color:#fff;border-color:#0078d4}
-    small{display:block;margin-top:8px;color:#555}
+    .btn-primary:hover { background: #005a9e; }
+    .btn:hover { background: #f4f4f4; }
+    small{display:block;margin-top:16px;color:#555; font-size: 12px; line-height: 1.5;}
   </style>
 </head>
 <body>
   <div class="box">
-    <div id="msg"><strong>Openen in desktop-app…</strong></div>
+    <h3 id="msg">Maak een keuze</h3>
+    <p>Hoe wil je dit bestand openen?</p>
     <div class="actions">
       <a id="openDesktop" class="btn btn-primary" href="#">Open in desktop-app</a>
-      <a id="openWeb" class="btn" href="#" target="_self">Open in web</a>
-      <a id="directLink" class="btn" href="#" target="_blank">Directe link</a>
+      
+      <a id="openWeb" class="btn" href="#" target="_self">Open in web (browser)</a>
     </div>
-    <small id="details"></small>
+    <small id="details">
+      <b>Info:</b> Als je kiest voor "desktop-app", zal je browser om toestemming vragen. 
+      Dit is een beveiligingspop-up die je moet accepteren.
+    </small>
   </div>
 
 <script>
   (function () {
     const qs = new URLSearchParams(location.search);
-    const uRaw = qs.get('u');
-    let app = (qs.get('app') || '').toLowerCase();
-    const auto = qs.get('auto') === '1';
+    const uRaw = qs.get('u'); // De SharePoint URL (DocIdRedir is prima!)
+    let app = (qs.get('app') || '').toLowerCase(); // Optioneel: &app=word
 
     const msgEl = document.getElementById('msg');
     const details = document.getElementById('details');
     const openDesktop = document.getElementById('openDesktop');
     const openWeb = document.getElementById('openWeb');
-    const directLink = document.getElementById('directLink');
 
     if (!uRaw) {
-      msgEl.innerHTML = "Geen bestands-URL gevonden (<code>?u=...</code>).";
+      msgEl.innerHTML = "❌ Fout";
+      details.innerHTML = "Geen bestands-URL gevonden in de link (parameter <code>?u=...</code> ontbreekt).";
+      openDesktop.style.display = 'none';
+      openWeb.style.display = 'none';
       return;
     }
 
-    // Probeer app te raden uit extensie; met DocIdRedir lukt dat vaak niet, maar kan geen kwaad.
+    // Probeer app te raden als deze niet is meegegeven
+    // (Werkt niet bij DocIdRedir, maar kan geen kwaad)
     if (!app) {
       try {
         const p = new URL(uRaw).pathname.toLowerCase();
         if (/\.(docx?|rtf)$/.test(p)) app = 'word';
         else if (/\.(xlsx?|csv)$/.test(p)) app = 'excel';
         else if (/\.(pptx?)$/.test(p)) app = 'powerpoint';
-      } catch {}
+      } catch (e) {
+        // Negeer errors als uRaw geen valide URL is
+      }
     }
 
-    // Encode 'u' voor de protocol handler
+    // Belangrijk: voorkom dubbele encoding
     let uEnc;
-    try { uEnc = encodeURIComponent(decodeURIComponent(uRaw)); } catch { uEnc = encodeURIComponent(uRaw); }
+    try { 
+      uEnc = encodeURIComponent(decodeURIComponent(uRaw)); 
+    } catch { 
+      uEnc = encodeURIComponent(uRaw); 
+    }
 
-    // Gebruik app-specifiek indien gegeven; anders generieke fallback
+    // Bepaal het protocol-schema
     const scheme =
       app === 'word' ? 'ms-word:ofe|u|' :
       app === 'excel' ? 'ms-excel:ofe|u|' :
       app === 'powerpoint' ? 'ms-powerpoint:ofe|u|' :
-      'ms-office:ofe|u|';
+      'ms-office:ofe|u|'; // Generieke fallback
 
     const desktopHref = scheme + uEnc;
-    const webFallback = uRaw; // DocIdRedir werkt prima in web
+    const webFallback = uRaw; // De originele URL is de web-fallback
 
-    // Knoppen vullen
+    // Vul de href-attributen van de knoppen
     openDesktop.href = desktopHref;
     openWeb.href = webFallback;
-    directLink.href = webFallback;
-    details.textContent = `App: ${app || '(onbekend)'} • Desktop: ${desktopHref} • Web fallback: ${webFallback}`;
 
-    // --- Belangrijk: fallback annuleren zodra we focus/visibility verliezen ---
-    let fellBack = false;
-    let timer = null;
-
-    function cancelFallback(reason) {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-        // optioneel voor debug:
-        // details.textContent += ` • fallback geannuleerd (${reason})`;
-      }
-    }
-
-    function scheduleFallback() {
-      cancelFallback();
-      timer = setTimeout(function () {
-        if (!fellBack) {
-          fellBack = true;
-          location.href = webFallback;
-        }
-      }, 2500); // iets ruimer dan 1200ms
-    }
-
-    // Als de Office-app opent, verliest de pagina meestal focus of wordt verborgen
-    window.addEventListener('blur', () => cancelFallback('blur'));
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) cancelFallback('hidden');
-    });
-    window.addEventListener('pagehide', () => cancelFallback('pagehide'));
-
-    // Klik handler: start desktop en zet fallback-timer
-    openDesktop.addEventListener('click', function (e) {
-      // expliciet: laat de browser de protocol-URL volgen
-      // (geen preventDefault)
-      scheduleFallback();
-    });
-
-    // Auto-launch (optioneel, via &auto=1). Kan door browser geblokkeerd worden.
-    if (auto) {
-      // Truc: klik het <a> element programmatically (user-gesture achtiger dan location=)
-      scheduleFallback();
-      openDesktop.click();
-    }
+    // Toon de URL's (handig voor debuggen)
+    // details.textContent += ` | DEBUG: Desktop Link: ${desktopHref}`;
   })();
 </script>
 
