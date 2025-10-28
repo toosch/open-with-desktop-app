@@ -99,7 +99,8 @@
 
       const scheme = app === 'word' ? 'ms-word:ofe|u|' :
                      app === 'excel' ? 'ms-excel:ofe|u|' :
-                     app === 'powerpoint' ? 'ms-powerpoint:ofe|u|' : null;
+                     app === 'powerpoint' ? 'ms-powerpoint:ofe|u|'  :
+                     'ms-office:ofe|u|'; // fallback werkt ook met DocIdRedir
 
       // Fallback naar WOPI (web) op basis van dezelfde tenant als het bestand
       let webFallback = webOverride;
