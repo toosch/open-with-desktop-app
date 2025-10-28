@@ -23,61 +23,99 @@
     <small id="details"></small>
   </div>
 
-  <script>
-    (function () {
-      const qs = new URLSearchParams(location.search);
-      const uRaw = qs.get('u');                // verwacht: DocIdRedir of echte file-URL
-      const app = (qs.get('app') || '').toLowerCase(); // optioneel hint: word|excel|powerpoint
-      const auto = qs.get('auto') === '1';     // optioneel: auto-launch
-      if (!uRaw) {
-        document.getElementById('msg').innerHTML = "Geen bestands-URL gevonden (<code>?u=...</code>).";
-        return;
-      }
+<script>
+  (function () {
+    const qs = new URLSearchParams(location.search);
+    const uRaw = qs.get('u');
+    let app = (qs.get('app') || '').toLowerCase();
+    const auto = qs.get('auto') === '1';
 
-      // 1) Altijd encoden t.b.v. protocol handler
-      //    (we accepteren zowel al-geencodeerde als platte input)
-      let u;
+    const msgEl = document.getElementById('msg');
+    const details = document.getElementById('details');
+    const openDesktop = document.getElementById('openDesktop');
+    const openWeb = document.getElementById('openWeb');
+    const directLink = document.getElementById('directLink');
+
+    if (!uRaw) {
+      msgEl.innerHTML = "Geen bestands-URL gevonden (<code>?u=...</code>).";
+      return;
+    }
+
+    // Probeer app te raden uit extensie; met DocIdRedir lukt dat vaak niet, maar kan geen kwaad.
+    if (!app) {
       try {
-        // als al ge-encodeerd is: decode -> re-encode (uniform)
-        u = encodeURIComponent(decodeURIComponent(uRaw));
-      } catch {
-        u = encodeURIComponent(uRaw);
+        const p = new URL(uRaw).pathname.toLowerCase();
+        if (/\.(docx?|rtf)$/.test(p)) app = 'word';
+        else if (/\.(xlsx?|csv)$/.test(p)) app = 'excel';
+        else if (/\.(pptx?)$/.test(p)) app = 'powerpoint';
+      } catch {}
+    }
+
+    // Encode 'u' voor de protocol handler
+    let uEnc;
+    try { uEnc = encodeURIComponent(decodeURIComponent(uRaw)); } catch { uEnc = encodeURIComponent(uRaw); }
+
+    // Gebruik app-specifiek indien gegeven; anders generieke fallback
+    const scheme =
+      app === 'word' ? 'ms-word:ofe|u|' :
+      app === 'excel' ? 'ms-excel:ofe|u|' :
+      app === 'powerpoint' ? 'ms-powerpoint:ofe|u|' :
+      'ms-office:ofe|u|';
+
+    const desktopHref = scheme + uEnc;
+    const webFallback = uRaw; // DocIdRedir werkt prima in web
+
+    // Knoppen vullen
+    openDesktop.href = desktopHref;
+    openWeb.href = webFallback;
+    directLink.href = webFallback;
+    details.textContent = `App: ${app || '(onbekend)'} • Desktop: ${desktopHref} • Web fallback: ${webFallback}`;
+
+    // --- Belangrijk: fallback annuleren zodra we focus/visibility verliezen ---
+    let fellBack = false;
+    let timer = null;
+
+    function cancelFallback(reason) {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+        // optioneel voor debug:
+        // details.textContent += ` • fallback geannuleerd (${reason})`;
       }
+    }
 
-      // 2) Kies scheme; met generieke ms-office fallback als app onbekend
-      const scheme =
-        app === 'word' ? 'ms-word:ofe|u|' :
-        app === 'excel' ? 'ms-excel:ofe|u|' :
-        app === 'powerpoint' ? 'ms-powerpoint:ofe|u|' :
-        'ms-office:ofe|u|';
+    function scheduleFallback() {
+      cancelFallback();
+      timer = setTimeout(function () {
+        if (!fellBack) {
+          fellBack = true;
+          location.href = webFallback;
+        }
+      }, 2500); // iets ruimer dan 1200ms
+    }
 
-      const desktopHref = scheme + u;
+    // Als de Office-app opent, verliest de pagina meestal focus of wordt verborgen
+    window.addEventListener('blur', () => cancelFallback('blur'));
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) cancelFallback('hidden');
+    });
+    window.addEventListener('pagehide', () => cancelFallback('pagehide'));
 
-      // 3) Web fallback: zonder extra kennis gebruiken we de aangeleverde URL zelf
-      //    (DocIdRedir werkt prima in web)
-      const webFallback = uRaw;
-      const openDesktop = document.getElementById('openDesktop');
-      const openWeb = document.getElementById('openWeb');
-      const directLink = document.getElementById('directLink');
-      const details = document.getElementById('details');
+    // Klik handler: start desktop en zet fallback-timer
+    openDesktop.addEventListener('click', function (e) {
+      // expliciet: laat de browser de protocol-URL volgen
+      // (geen preventDefault)
+      scheduleFallback();
+    });
 
-      openDesktop.href = desktopHref;      // user gesture → hoogste kans van slagen
-      openWeb.href = webFallback;
-      directLink.href = webFallback;
+    // Auto-launch (optioneel, via &auto=1). Kan door browser geblokkeerd worden.
+    if (auto) {
+      // Truc: klik het <a> element programmatically (user-gesture achtiger dan location=)
+      scheduleFallback();
+      openDesktop.click();
+    }
+  })();
+</script>
 
-      details.textContent = `Desktop: ${desktopHref}  •  Web fallback: ${webFallback}`;
-
-      // 4) Optioneel auto-launch (kan door browser worden geblokkeerd)
-      if (auto) {
-        // Probeer via tijdelijke <a> klik (soms minder geblokkeerd dan location=)
-        const a = document.createElement('a');
-        a.href = desktopHref;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { location.href = webFallback; }, 1200);
-      }
-    })();
-  </script>
 </body>
 </html>
